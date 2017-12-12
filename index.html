@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <style type="text/css">
+      select {
+        width: 150px;
+      }
+
+      path.link {
+        stroke: #bbb;
+        stroke-width: 1px;
+      }
+
+      path.active {
+        stroke: #000;
+        stroke-width: 2px;
+      }
+      circle.node {
+        cursor: pointer;
+      }
+
+      circle.active {
+        stroke-width: 2px;  
+      }
+
+      foreignObject, foreignObject * {
+        pointer-events: none;
+      }
+      foreignObject body {
+        margin: 0;
+      }
+
+      div.text {
+        font: 14px sans-serif;
+        text-align: center;
+        font-weight: bold;
+        width: 100%;
+        height: 16px;
+        padding-top: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <select id="scaleSelect">
+      <option selected disabled>Select a Scale</option>
+      <option value="major">major</option>
+    </select>
+    <select id="keySelect">
+      <option selected disabled>Select a Key</option>
+    </select>
+    <div></div>
+    <!-- <script src="https://d3js.org/d3.v4.min.js"></script> -->
+    <script src="https://d3js.org/d3.v2.min.js"></script>
+    <script type="text/javascript" src="chordData.min.js"></script>
+    <script type="text/javascript" src="graph.js"></script>
+  </body>
+</html>
