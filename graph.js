@@ -1,8 +1,9 @@
 const CHORD_THRESHOLD = 0.1, OTHER_CHORDS_THRESHOLD = 1, MIN_NODE_SIZE = 15, MAX_NODE_SIZE = 25;
 const OTHER_CHORDS_TEXT = 'Other'; // other chords text
 const MAX_ZOOM_IN = 2.0, MAX_ZOOM_OUT = 0.2; // zoom scales
-const ARROW_PAD = 15; // padding between circle and arrow link
+const ARROW_PAD = 10; // padding between circle and arrow link
 const NAME_WIDTH = 50, NAME_HEIGHT = 40; // width and height of labels
+const FORCE_STRENGTH = 0.3; // force link strength
 
 // variables for customizable containers and parameters
 var colors = ['#ff0000', 'url(#pattern1)', '#ffb014', 'url(#pattern3)', '#EFE600', '#00D300', 'url(#pattern6)', '#4800FF', 'url(#pattern8)', '#B800E5', 'url(#pattern10)', '#FF00CB', '#cccccc']; // last color is for other chords
@@ -142,12 +143,14 @@ function getNodesFromChords(chords) {
     }
   }
 
-  nodes.push({
-    name: OTHER_CHORDS_TEXT,
-    percentage: otherPer,
-    color: 12,
-    children: otherNodes
-  });
+  if(otherNodes.length > 0) {
+    nodes.push({
+      name: OTHER_CHORDS_TEXT,
+      percentage: otherPer,
+      color: 12,
+      children: otherNodes
+    });    
+  }
 
   return nodes;
 }
@@ -183,27 +186,31 @@ function drawForceGraph(nodes, links) {
 
   // set up SVG for D3
   var width  = window.innerWidth-25, height = window.innerHeight-45;
+  width = 350;
 
   var svg = d3.select('body')
   .append('svg')
   .attr('width', width)
-  .attr('height', height);
+  .attr('height', height)
+  .style('background', '#ddd');
 
   var simulation = d3.forceSimulation()
-  .force("link", d3.forceLink().id(function(d) { return d.chordID; }))
-  //  .force("link", d3.forceLink().id(function(d) { return d.chordID; }).distance(function(d) {return linkDistance;}).strength(0.3))
-  //   .force("gravity", d3.forceManyBody(30))
-  //    .force("cluster", function(alpha) {
-  //      for (var i = 0, n = nodes.length, node, k = alpha * 1; i < n; ++i) {
-  //        node = nodes[i];
-  //        node.vx -= node.x * k;
-  //        node.vy -= node.y * k;
-  //      }
-  //    })
-  .force("collide", d3.forceCollide().radius(function(d) { return node_size(d.percentage) + 30; }))
+  //  .force("link", d3.forceLink().id(function(d) { return d.chordID; }).distance(function(d) {return linkDistance;}).strength(FORCE_STRENGTH))
+  //  .force("charge", d3.forceManyBody())
+  //  .force("cluster", function(alpha) {
+  //    for (var i = 0, n = nodes.length, node, k = alpha * 1; i < n; ++i) {
+  //      node = nodes[i];
+  //      node.vx -= node.x * k;
+  //      node.vy -= node.y * k;
+  //    }
+  //  })
+  .force("collide", d3.forceCollide().radius(function(d) { return node_size(d.percentage)+20; }))
   .force("center", d3.forceCenter(width / 2, height / 2))
-  .force("xAxis",d3.forceX(width/2))
-  .force("yAxis",d3.forceY(height/2))
+  .force('x', d3.forceX().x(function(d) {
+    return width/2;
+  }))
+  //  .force("y",d3.forceY())
+  .force("link", d3.forceLink().id(function(d) { return d.chordID; }))
 
   var container = svg.append("g")
 
