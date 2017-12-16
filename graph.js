@@ -234,7 +234,6 @@ function drawForceGraph(nodes, links) {
 
   var node = container
   .selectAll("circle")
-  //  .selectAll("foreignObject")
   .data(nodes)
   .enter();
 
