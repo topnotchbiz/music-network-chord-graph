@@ -1,12 +1,12 @@
-//D3ok();
-
-const CHORD_THRESHOLD = 0.1, OTHER_CHORDS_THRESHOLD = 1, MIN_NODE_SIZE = 15, MAX_NODE_SIZE = 25, OTHER_CHORDS_TEXT = 'Other chords';
-const MAX_ZOOM_IN = 2.0, MAX_ZOOM_OUT = 0.2;
-
+const CHORD_THRESHOLD = 0.1, OTHER_CHORDS_THRESHOLD = 1, MIN_NODE_SIZE = 15, MAX_NODE_SIZE = 25;
+const OTHER_CHORDS_TEXT = 'Other'; // other chords text
+const MAX_ZOOM_IN = 2.0, MAX_ZOOM_OUT = 0.2; // zoom scales
+const ARROW_PAD = 15; // padding between circle and arrow link
+const NAME_WIDTH = 50, NAME_HEIGHT = 40; // width and height of labels
 
 // variables for customizable containers and parameters
-var colors = ['#ff0000', 'url(#color1)', '#ffb014', 'url(#color3)', '#EFE600', '#00D300', 'url(#color6)', '#4800FF', 'url(#color8)', '#B800E5', 'url(#color10)', '#FF00CB', '#cccccc']; // last color is for other chords
-var chordDataByScale = [], selectedScale = '', selectedKey = '', linkDistance = 250, parentNodes = [];
+var colors = ['#ff0000', 'url(#pattern1)', '#ffb014', 'url(#pattern3)', '#EFE600', '#00D300', 'url(#pattern6)', '#4800FF', 'url(#pattern8)', '#B800E5', 'url(#pattern10)', '#FF00CB', '#cccccc']; // last color is for other chords
+var chordDataByScale = [], selectedScale = '', selectedKey = '', linkDistance = 150, parentNodes = [], parentIds = [];
 
 // Initialize chord data
 ChordData.init()
@@ -15,6 +15,7 @@ ChordData.init()
 })
 .then(function() {
   console.log('Chord data is initialized');
+  initBtnEvent();
   getScales();
 })
 
@@ -28,6 +29,9 @@ function getScales() {
   .on('change', function() {
     selectedScale = d3.select("#scaleSelect").property('value');
     getKeysByScale();
+
+    // Please call this function anytime a user clicks on a chord node to expand it:
+    ChordData.onPathChange(parentIds, selectedKey, selectedScale);
   })
   .selectAll("option")
   .data(possibleScales)
@@ -38,6 +42,10 @@ function getScales() {
   .text(function(d) {
     return d;
   });
+
+  // Get Keys by major initially
+  selectedScale = 'major';
+  getKeysByScale();
 }
 
 function getKeysByScale() {
@@ -49,15 +57,9 @@ function getKeysByScale() {
   d3.select("#keySelect").selectAll("*").remove();
 
   d3.select("#keySelect")
-  .append('option')
-  .attr('selected', 'selected')
-  .attr('disabled', 'disabled')
-  .text('Select a Key');
-
-  d3.select("#keySelect")
   .on('change', function() {
     selectedKey = d3.select("#keySelect").property('value');
-    getChordDataByScaleAndKey();
+    changeChordKey();
   })
   .selectAll("option")
   .data(keysByScale)
@@ -67,6 +69,34 @@ function getKeysByScale() {
   })
   .text(function(d) {
     return d;
+  })
+  .each(function(d) {
+
+    // Select C key in dropdown initially
+    if (d == "C") {
+      d3.select(this).attr('selected', 'selected');
+      selectedKey = 'C';
+      getChordDataByScaleAndKey();      
+    }
+  });
+}
+
+
+function initBtnEvent() {
+  d3.select('#arbor-reset-button').on('click', function() {
+    getChordDataByScaleAndKey();
+
+    // Please call this function anytime a user clicks on a chord node to expand it:
+    ChordData.onPathChange(parentIds, selectedKey, selectedScale);
+  });
+}
+
+function changeChordKey() {
+  d3.selectAll('foreignObject').each(function(d) {
+    if(d.name == 'Other chords') return;
+    var chordID = d.chordID;
+    var nameByKey = ChordData.getChordDisplayName(chordID, selectedKey, selectedScale);
+    d3.select(this).select('body').select('div').html(nameByKey);
   });
 }
 
@@ -156,68 +186,53 @@ function drawForceGraph(nodes, links) {
 
   var svg = d3.select('body')
   .append('svg')
-  .attr('oncontextmenu', 'return false;')
   .attr('width', width)
   .attr('height', height);
 
-  // define arrow markers for graph links and colors
-  addMarkups();
+  var simulation = d3.forceSimulation()
+  .force("link", d3.forceLink().id(function(d) { return d.chordID; }))
+  //  .force("link", d3.forceLink().id(function(d) { return d.chordID; }).distance(function(d) {return linkDistance;}).strength(0.3))
+  //   .force("gravity", d3.forceManyBody(30))
+  //    .force("cluster", function(alpha) {
+  //      for (var i = 0, n = nodes.length, node, k = alpha * 1; i < n; ++i) {
+  //        node = nodes[i];
+  //        node.vx -= node.x * k;
+  //        node.vy -= node.y * k;
+  //      }
+  //    })
+  .force("collide", d3.forceCollide().radius(function(d) { return node_size(d.percentage) + 30; }))
+  .force("center", d3.forceCenter(width / 2, height / 2))
+  .force("xAxis",d3.forceX(width/2))
+  .force("yAxis",d3.forceY(height/2))
 
-  // init D3 force layout
-  var force = d3.layout.force()
-  .nodes(nodes)
-  .links(links)
-  .size([width, height])
-  .linkDistance(linkDistance)
-  .charge(-500)
-  .on('tick', tick);
+  var container = svg.append("g")
 
-  // handles to link and node element groups
-  var path = svg.append('svg:g').selectAll('path'), circle = svg.append('svg:g').selectAll('g');
-
-  // path (link) group
-  path = path.data(links);
-
-  // update existing links
-  path
-  .style('marker-start', function(d) { return d.left ? 'url(#start-arrow)' : ''; })
-  .style('marker-end', function(d) { return d.right ? 'url(#end-arrow)' : ''; });
-
-
-  // add new links
-  path.enter().append('svg:path')
+  var link = container
+  .selectAll("line")
+  .data(links)
+  .enter().append('svg:line')
   .attr('class', function(d) { return d.hasOwnProperty('active') ? 'link active': 'link'; })
   .style('marker-start', function(d) { return d.left ? 'url(#start-arrow)' : ''; })
   .style('marker-end', function(d) { return d.right ? 'url(#end-arrow)' : ''; });
 
-  // remove old links
-  path.exit().remove();
-
-  // circle (node) group
-  // NB: the function arg is crucial here! nodes are known by id, not by index!
-  circle = circle.data(nodes, function(d) { return d.chordID; });
-
-  // update existing nodes (reflexive & selected visual states)
-  circle.selectAll('circle')
-  .style('fill', function(d) { return colors[d.color]; });
-
-
   minNodeSize = Math.min.apply(null, nodes.map(function (n) { return n.percentage; }));
   maxNodeSize = Math.max.apply(null, nodes.map(function (n) { return n.percentage; }));
 
-  var node_size = d3.scale.linear()
+  var node_size = d3.scaleLinear()
   .range([MIN_NODE_SIZE, MAX_NODE_SIZE])
   .domain([minNodeSize, maxNodeSize])
   .clamp(true);
 
-  // add new nodes
-  var g = circle.enter().append('svg:g');
-  
-  g.append('svg:circle')
+  var node = container
+  .selectAll("circle")
+  //  .selectAll("foreignObject")
+  .data(nodes)
+  .enter();
+
+  var circle = node.append("circle")
   .attr('class', function(d) { return d.hasOwnProperty('depth') ? 'node active': 'node'; })
   .attr('r', function (d) { return node_size(d.percentage); })
   .style('fill', function(d) { return colors[d.color]; })
-  .style('stroke', '#000')
   .on('click', function(d) {
     if (d3.event.defaultPrevented) return;
 
@@ -238,84 +253,157 @@ function drawForceGraph(nodes, links) {
     nodes = parentNodes.slice(0);
     links = [];
 
-    var parentIds = [];
+    parentIds = [];
 
-    for(var i=0; i<parentNodes.length-1; i++) {
+    for(var i=0; i<parentNodes.length; i++) {
       parentIds.push(parentNodes[i].chordID);
-      links.push({source: parentNodes[i], target: parentNodes[i+1], left: false, right: true, active: true});
+
+      if(i<parentNodes.length-1) {
+        links.push({source: parentNodes[i], target: parentNodes[i+1], left: false, right: true, active: true});        
+      }
     }
 
-    var chordChildren = ChordData.getChordsByPath(parentIds, chordDataByScale);      
+    var chordChildren = ChordData.getChordsByPath(parentIds, chordDataByScale);
+
     nodeChildren = nodeChildren.concat(getNodesFromChords(chordChildren));
 
     if(d.name==OTHER_CHORDS_TEXT) {
       nodeChildren = nodeChildren.filter(function(d) { return d.name!=OTHER_CHORDS_TEXT; });
     }
 
-    // unenlarge target node
-    d3.select(this).attr('transform', '');
-
     for(var i=0; i<nodeChildren.length; i++) {
       var point = d3.mouse(this);
+
       nodeChildren[i].x = point[0];
       nodeChildren[i].y = point[1];
       nodes.push(nodeChildren[i]);  
 
-      var source = d, target = nodeChildren[i];
+      if(parentNodes.length>0) {
+        var source = d, target = nodeChildren[i];
 
-      if(d.name==OTHER_CHORDS_TEXT) {
-        source = nodes[parentNodes.length-1];
+        if(d.name==OTHER_CHORDS_TEXT) {
+          source = nodes[parentNodes.length-1];
+        }
+
+        links.push({source: source, target: target, left: false, right: true});        
       }
-
-      links.push({source: source, target: target, left: false, right: true});
     }
 
     drawForceGraph(nodes, links);
-  });
+  })
+  .call(d3.drag()
+    .on("start", dragstarted)
+    .on("drag", dragged)
+    .on("end", dragended));
 
-  // show node IDs
-  var objBody = g.append('foreignObject')
-  .attr('x', -50)
-  .attr('y', function (d) { return node_size(d.percentage); })
-  .attr('width', 100)
-  .attr('height', 40)
-  .append("xhtml:body");
+  // show node Names
+  var textObj = node.append('foreignObject')
+  .attr('width', NAME_WIDTH)
+  .attr('height', function(d) {
+    if(d.hasOwnProperty('depth')) {
+      return NAME_HEIGHT/2;
+    } else {
+      return NAME_HEIGHT;
+    }
+  });
+  objBody = textObj.append("xhtml:body");
   objBody.append('div')
   .attr('class', 'text')
   .html(function(d) { return d.name; });
   objBody.append('div')
   .attr('class', 'text')
-  .html(function(d) { return d.percentage.toFixed(1) + '%'; });
+  .html(function(d) {
+    if(d.hasOwnProperty('depth')) {
+      return '';
+    } else {
+      return d.percentage.toFixed(1) + '%';       
+    }
+  });
 
-  // remove old nodes
-  circle.exit().remove();
+  simulation
+  .nodes(nodes)
+  .on("tick", ticked);
 
-  // set the graph in motion
-  force.start();
+  simulation.force("link")
+  .links(links);
 
-  // update force layout (called automatically each iteration)
-  function tick() {
-    // draw directed edges with proper padding from node centers
-    path.attr('d', function(d) {
+  function ticked() {
+
+    link
+    .attr("x1", function(d) {
+      return d.source.x;
+    })
+    .attr("y1", function(d) {
+      return d.source.y;
+    })
+    .attr("x2", function(d) {
       var deltaX = d.target.x - d.source.x,
       deltaY = d.target.y - d.source.y,
       dist = Math.sqrt(deltaX * deltaX + deltaY * deltaY),
       normX = deltaX / dist,
+      targetPadding = node_size(d.target.percentage) + ARROW_PAD,
+      targetX = d.target.x - (targetPadding * normX);
+
+      var deltaCrss = node_size(d.target.percentage)*deltaX/deltaY;
+      var abDeltaCrss = Math.abs(deltaCrss);
+
+      var obj = d3.selectAll('foreignObject').filter(function(fd){
+        return fd==d.target;
+      }).node();
+      var objHei = obj ? obj.getBBox().height : 40;
+
+      if(((NAME_WIDTH/2)>abDeltaCrss) && (0>deltaY)) {
+        if(Math.abs(deltaX/deltaY) > (NAME_WIDTH/2/(node_size(d.target.percentage)+objHei))) {
+          targetX = d.target.x + deltaCrss/abDeltaCrss*NAME_WIDTH/2;
+        } else {
+          targetX = d.target.x + (node_size(d.target.percentage)+objHei)*deltaX/deltaY;
+        }
+
+        targetX -= ARROW_PAD * normX;
+      }
+
+      return targetX;
+    })
+    .attr("y2", function(d) {
+      var deltaX = d.target.x - d.source.x,
+      deltaY = d.target.y - d.source.y,
+      dist = Math.sqrt(deltaX * deltaX + deltaY * deltaY),
       normY = deltaY / dist,
-      sourcePadding = node_size(d.source.percentage),
-      targetPadding = node_size(d.target.percentage) + 6,
-      sourceX = d.source.x + (sourcePadding * normX),
-      sourceY = d.source.y + (sourcePadding * normY),
-      targetX = d.target.x - (targetPadding * normX),
+      targetPadding = node_size(d.target.percentage) + ARROW_PAD,
       targetY = d.target.y - (targetPadding * normY);
-      return 'M' + sourceX + ',' + sourceY + 'L' + targetX + ',' + targetY;
+
+      var deltaCrss = node_size(d.target.percentage)*deltaX/deltaY;
+      var abDeltaCrss = Math.abs(deltaCrss);
+
+      var obj = d3.selectAll('foreignObject').filter(function(fd){
+        return fd==d.target;
+      }).node();
+      var objHei = obj ? obj.getBBox().height : 40;
+
+      if(((NAME_WIDTH/2)>abDeltaCrss) && (0>deltaY)) {
+        if(Math.abs(deltaX/deltaY) > (NAME_WIDTH/2/(node_size(d.target.percentage)+objHei))) {
+          targetY = d.target.y + NAME_WIDTH/2*deltaY/deltaX*deltaCrss/abDeltaCrss;
+        } else {
+          targetY = d.target.y + node_size(d.target.percentage)+objHei;
+        }
+
+        targetY -= ARROW_PAD * normY;
+      }
+
+      return targetY;
     });
 
-    circle.attr('transform', function(d) {
-      return 'translate(' + d.x + ',' + d.y + ')';
-    });
+    circle
+    .attr("cx", function(d) { return d.x; })
+    .attr("cy", function(d) { return d.y; });
 
+    textObj
+    .attr("x", function(d) { return d.x - NAME_WIDTH/2; })
+    .attr("y", function(d) { return d.y + node_size(d.percentage); });
   }
+
+  // define arrow markers for graph links and colors
+  addMarkups();
 
   function addMarkups() {
     // define arrow markers for graph links and colors
@@ -339,48 +427,47 @@ function drawForceGraph(nodes, links) {
     .attr('orient', 'auto')
     .append('svg:path')
     .attr('d', 'M10,-10L0,0L20,10');
-    //    .attr('fill', '#000');
 
-    var grad1 = svg.append('svg:defs').append('svg:linearGradient')
-    .attr('id', 'color1').attr('x1', "40%").attr('y1', "20%").attr('x2', "20%").attr('y2', "40%").attr('spreadMethod', 'repeat');
-    grad1.append('stop').attr('offset', '0').attr('stop-color', '#F00');
-    grad1.append('stop').attr('offset', '1').attr('stop-color', '#540000');
+    var patt1 = svg.append('defs').append('pattern')
+    .attr('id', 'pattern1').attr('width', "16").attr('height', "16").attr('patternUnits', "userSpaceOnUse").attr('patternTransform', "rotate(45)");
+    patt1.append('rect').attr('width', '16').attr('height', '16').attr('fill', '#f00');
+    patt1.append('line').attr('x1', '8').attr('y1', '0').attr('x2', '8').attr('y2', '16').attr('stroke', '#540000').attr('stroke-width', '8');
 
-    var grad3 = svg.append('svg:defs').append('svg:linearGradient')
-    .attr('id', 'color3').attr('x1', "40%").attr('y1', "20%").attr('x2', "20%").attr('y2', "40%").attr('spreadMethod', 'repeat');
-    grad3.append('stop').attr('offset', '0').attr('stop-color', '#ffb014');
-    grad3.append('stop').attr('offset', '1').attr('stop-color', '#540000');
+    var patt3 = svg.append('defs').append('pattern')
+    .attr('id', 'pattern3').attr('width', "16").attr('height', "16").attr('patternUnits', "userSpaceOnUse").attr('patternTransform', "rotate(45)");
+    patt3.append('rect').attr('width', '16').attr('height', '16').attr('fill', '#ffb014');
+    patt3.append('line').attr('x1', '8').attr('y1', '0').attr('x2', '8').attr('y2', '16').attr('stroke', '#efe44c').attr('stroke-width', '8');
 
-    var grad6 = svg.append('svg:defs').append('svg:linearGradient')
-    .attr('id', 'color6').attr('x1', "40%").attr('y1', "20%").attr('x2', "20%").attr('y2', "40%").attr('spreadMethod', 'repeat');
-    grad6.append('stop').attr('offset', '0').attr('stop-color', '#00D300');
-    grad6.append('stop').attr('offset', '1').attr('stop-color', '#003303');
+    var patt6 = svg.append('defs').append('pattern')
+    .attr('id', 'pattern6').attr('width', "16").attr('height', "16").attr('patternUnits', "userSpaceOnUse").attr('patternTransform', "rotate(45)");
+    patt6.append('rect').attr('width', '16').attr('height', '16').attr('fill', '#00D300');
+    patt6.append('line').attr('x1', '8').attr('y1', '0').attr('x2', '8').attr('y2', '16').attr('stroke', '#4800FF').attr('stroke-width', '8');
 
-    var grad8 = svg.append('svg:defs').append('svg:linearGradient')
-    .attr('id', 'color8').attr('x1', "40%").attr('y1', "20%").attr('x2', "20%").attr('y2', "40%").attr('spreadMethod', 'repeat');
-    grad8.append('stop').attr('offset', '0').attr('stop-color', '#4800FF');
-    grad8.append('stop').attr('offset', '1').attr('stop-color', '#440038');
+    var patt8 = svg.append('defs').append('pattern')
+    .attr('id', 'pattern8').attr('width', "16").attr('height', "16").attr('patternUnits', "userSpaceOnUse").attr('patternTransform', "rotate(45)");
+    patt8.append('rect').attr('width', '16').attr('height', '16').attr('fill', '#4800FF');
+    patt8.append('line').attr('x1', '8').attr('y1', '0').attr('x2', '8').attr('y2', '16').attr('stroke', '#B800E5').attr('stroke-width', '8');
 
-    var grad10 = svg.append('svg:defs').append('svg:linearGradient')
-    .attr('id', 'color10').attr('x1', "40%").attr('y1', "20%").attr('x2', "20%").attr('y2', "40%").attr('spreadMethod', 'repeat');
-    grad10.append('stop').attr('offset', '0').attr('stop-color', '#B800E5');
-    grad10.append('stop').attr('offset', '1').attr('stop-color', '#002117');
+    var patt10 = svg.append('defs').append('pattern')
+    .attr('id', 'pattern10').attr('width', "16").attr('height', "16").attr('patternUnits', "userSpaceOnUse").attr('patternTransform', "rotate(45)");
+    patt10.append('rect').attr('width', '16').attr('height', '16').attr('fill', '#B800E5');
+    patt10.append('line').attr('x1', '8').attr('y1', '0').attr('x2', '8').attr('y2', '16').attr('stroke', '#ea3ac5').attr('stroke-width', '8');
   }
 
-  //Create the zoom behavior to set for the draw
-  var zoom = d3.behavior.zoom().scaleExtent([MAX_ZOOM_OUT, MAX_ZOOM_IN]).on('zoom', zoomed);
-
-  //Function called on the zoom event. It translate the draw on the zoommed point and scale with a certain factor
-  function zoomed() {
-    svg.selectAll('svg > g').attr("transform", "translate(" + d3.event.translate + ")scale(" + d3.event.scale + ")");
+  function dragstarted(d) {
+    if (!d3.event.active) simulation.alphaTarget(0.3).restart();
+    d.fx = d.x;
+    d.fy = d.y;
   }
 
-  //Create the drag and drop behavior to set for the objects crated
-  var drag = d3.behavior.drag()
-  .origin(function(d) { return d; });
+  function dragged(d) {
+    d.fx = d3.event.x;
+    d.fy = d3.event.y;
+  }
 
-  //Set the zoom and drag behavior on the svg    
-  svg.call(zoom);
-  d3.selectAll('svg > g').call(drag);
-  d3.selectAll('circle').call(force.drag);
+  function dragended(d) {
+    if (!d3.event.active) simulation.alphaTarget(0);
+    d.fx = null;
+    d.fy = null;
+  }
 }
