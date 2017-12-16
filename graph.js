@@ -191,8 +191,7 @@ function drawForceGraph(nodes, links) {
   var svg = d3.select('body')
   .append('svg')
   .attr('width', width)
-  .attr('height', height)
-  .style('background', '#ddd');
+  .attr('height', height);
 
   var simulation = d3.forceSimulation()
   //  .force("link", d3.forceLink().id(function(d) { return d.chordID; }).distance(function(d) {return linkDistance;}).strength(FORCE_STRENGTH))
