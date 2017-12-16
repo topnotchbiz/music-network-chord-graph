@@ -1,5 +1,6 @@
 const CHORD_THRESHOLD = 0.1, OTHER_CHORDS_THRESHOLD = 1, MIN_NODE_SIZE = 15, MAX_NODE_SIZE = 25;
-const OTHER_CHORDS_TEXT = 'Other'; // other chords text
+const CONTAINER_WIDTH = 350, CONTAINER_HEIGHT = 900;
+const OTHER_CHORDS_TEXT = 'Other', OTHER_CHORDS_LIMIT = 10; // other chords text and count limit
 const MAX_ZOOM_IN = 2.0, MAX_ZOOM_OUT = 0.2; // zoom scales
 const ARROW_PAD = 10; // padding between circle and arrow link
 const NAME_WIDTH = 50, NAME_HEIGHT = 40; // width and height of labels
@@ -168,7 +169,7 @@ function getOtherNodesFromChords(chords) {
     return ChordData.getChordDisplayColorIdx(chord.chordID, selectedKey, selectedScale);
   });
 
-  for(var i=0; i<chords.length; i++) {
+  for(var i=0; i<Math.min(OTHER_CHORDS_LIMIT, chords.length); i++) {
     var chord = chords[i];
     var percentage = chord.percentage;
 
@@ -185,8 +186,7 @@ function drawForceGraph(nodes, links) {
   d3.selectAll('svg').remove();
 
   // set up SVG for D3
-  var width  = window.innerWidth-25, height = window.innerHeight-45;
-  width = 350;
+  var width  = CONTAINER_WIDTH, height = CONTAINER_HEIGHT-25;
 
   var svg = d3.select('body')
   .append('svg')
@@ -209,7 +209,9 @@ function drawForceGraph(nodes, links) {
   .force('x', d3.forceX().x(function(d) {
     return width/2;
   }))
-  //  .force("y",d3.forceY())
+  .force("y",d3.forceY().y(function(d) {
+    return height/2;
+  }))
   .force("link", d3.forceLink().id(function(d) { return d.chordID; }))
 
   var container = svg.append("g")
